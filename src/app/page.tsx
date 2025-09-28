@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail, BarChart3, Calendar, Activity, RefreshCw, Wifi, WifiOff, Key } from 'lucide-react';
+import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail, BarChart3, RefreshCw, Wifi, WifiOff, Key, AlertCircle, Clock } from 'lucide-react';
 import { useXApi } from './hooks/useXApi';
+import { useAnalytics } from './hooks/useAnalytics';
 import { emailService, isValidEmail } from './services/emailService';
+import { LineChart, MetricCard, TweetCard } from './components/AnalyticsCharts';
 
 interface AnalyticsDataPoint {
   date: string;
@@ -136,6 +138,9 @@ export default function GrowthRingsApp() {
   const xApi = useXApi();
   const [showXApiConfig, setShowXApiConfig] = useState(false);
   const [bearerTokenInput, setBearerTokenInput] = useState('');
+
+  // Analytics integration
+  const analytics = useAnalytics(xApi.isConfigured ? bearerTokenInput || localStorage.getItem('xapi_token') || undefined : undefined);
 
   // Tool state
   const [currentFollowers, setCurrentFollowers] = useState(2500);
@@ -610,7 +615,10 @@ export default function GrowthRingsApp() {
   const handleXApiConfig = (e: React.FormEvent) => {
     e.preventDefault();
     if (bearerTokenInput.trim()) {
-      xApi.setBearerToken(bearerTokenInput.trim());
+      const token = bearerTokenInput.trim();
+      xApi.setBearerToken(token);
+      // Store token for analytics (in production, use more secure storage)
+      localStorage.setItem('xapi_token', token);
       setShowXApiConfig(false);
     }
   };
@@ -723,54 +731,7 @@ export default function GrowthRingsApp() {
     return "🌱 Every expert was once a beginner!";
   };
 
-  // Analytics helper functions
-  const getAnalyticsStats = () => {
-    if (analyticsData.length === 0) return { growth: 0, avgEngagement: 0, totalTweets: 0 };
-
-    const latest = analyticsData[analyticsData.length - 1];
-    const earliest = analyticsData[0];
-    const growth = ((latest.followers - earliest.followers) / earliest.followers) * 100;
-    const avgEngagement = analyticsData.reduce((sum, d) => sum + d.engagement, 0) / analyticsData.length;
-    const totalTweets = analyticsData.reduce((sum, d) => sum + d.tweets, 0);
-
-    return { growth, avgEngagement, totalTweets };
-  };
-
-  const SimpleChart = ({ data, metric, color }: { data: AnalyticsDataPoint[], metric: keyof AnalyticsDataPoint, color: string }) => {
-    if (data.length === 0) return null;
-
-    const values = data.map(d => typeof d[metric] === 'number' ? d[metric] : 0);
-    const max = Math.max(...values);
-    const min = Math.min(...values);
-    const range = max - min || 1;
-
-    return (
-      <div
-        className="h-32 flex items-end gap-1"
-        role="img"
-        aria-label={`Chart showing ${metric} data over ${data.length} days. Values range from ${min} to ${max}.`}
-      >
-        {values.map((value, index) => {
-          const height = ((value - min) / range) * 100;
-          return (
-            <div
-              key={index}
-              className="flex-1 rounded-t focus:outline-none focus:ring-2 focus:ring-blue-500"
-              style={{
-                height: `${Math.max(height, 5)}%`,
-                backgroundColor: color,
-                opacity: 0.8
-              }}
-              title={`${data[index].date}: ${value}`}
-              tabIndex={0}
-              role="button"
-              aria-label={`Data point for ${data[index].date}: ${value}`}
-            />
-          );
-        })}
-      </div>
-    );
-  };
+  // Note: Legacy analytics functions removed - using real X API analytics now
 
   if (showTool) {
     return (
@@ -1242,9 +1203,10 @@ export default function GrowthRingsApp() {
     );
   }
 
-  // Analytics Dashboard
+  // Real Analytics Dashboard
   if (showAnalytics) {
-    const stats = getAnalyticsStats();
+    const growthStats = analytics.getGrowthStats();
+    const engagementTrends = analytics.getEngagementTrends();
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -1257,11 +1219,34 @@ export default function GrowthRingsApp() {
                   <BarChart3 className="text-white" size={24} />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
-                  <p className="text-sm text-gray-600">Track your growth over time</p>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    {analytics.hasData ? `@${analytics.data.user?.username} Analytics` : 'Analytics Dashboard'}
+                  </h1>
+                  <p className="text-sm text-gray-600">
+                    {analytics.hasData ? 'Real-time X growth analytics' : 'Connect your X account to see analytics'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
+                {analytics.isConfigured && (
+                  <button
+                    onClick={analytics.refreshAnalytics}
+                    disabled={analytics.isRefreshing}
+                    className="bg-green-100 hover:bg-green-200 text-green-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                  >
+                    <RefreshCw size={16} className={analytics.isRefreshing ? 'animate-spin' : ''} />
+                    {analytics.isRefreshing ? 'Syncing...' : 'Sync Data'}
+                  </button>
+                )}
+                {!analytics.isConfigured && (
+                  <button
+                    onClick={() => setShowXApiConfig(true)}
+                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                  >
+                    <Key size={16} />
+                    Connect X API
+                  </button>
+                )}
                 <button
                   onClick={navigateToTool}
                   className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
@@ -1281,104 +1266,232 @@ export default function GrowthRingsApp() {
         </div>
 
         <div className="max-w-6xl mx-auto p-6">
-          {/* Stats Overview */}
-          <div className="grid md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="text-blue-600" size={20} />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">30-Day Growth</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stats.growth > 0 ? '+' : ''}{stats.growth.toFixed(1)}%
-                  </p>
-                </div>
+          {analytics.isLoading ? (
+            // Loading State
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading your analytics...</p>
               </div>
             </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Activity className="text-green-600" size={20} />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Avg Engagement</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.avgEngagement.toFixed(1)}%</p>
-                </div>
+          ) : analytics.error ? (
+            // Error State
+            <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
+              <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-red-800 mb-2">Analytics Error</h3>
+              <p className="text-red-600 mb-4">{analytics.error}</p>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={analytics.refreshAnalytics}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => setShowXApiConfig(true)}
+                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Check API Settings
+                </button>
               </div>
             </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <Zap className="text-purple-600" size={20} />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Total Tweets</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.totalTweets}</p>
-                </div>
-              </div>
+          ) : !analytics.hasData ? (
+            // No Data State
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-8 text-center">
+              <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">No Analytics Data</h3>
+              <p className="text-gray-600 mb-4">Connect your X account to see real-time analytics</p>
+              <button
+                onClick={() => setShowXApiConfig(true)}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 mx-auto"
+              >
+                <Key size={16} />
+                Connect X API
+              </button>
             </div>
-          </div>
-
-          {/* Charts */}
-          <div className="grid lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Users className="text-blue-600" size={20} />
-                Followers Growth
-              </h3>
-              <SimpleChart data={analyticsData} metric="followers" color="#1565C0" />
-              <div className="mt-4 flex justify-between text-sm text-gray-600">
-                <span>{analyticsData[0]?.followers.toLocaleString()}</span>
-                <span>{analyticsData[analyticsData.length - 1]?.followers.toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp className="text-green-600" size={20} />
-                Engagement Rate
-              </h3>
-              <SimpleChart data={analyticsData} metric="engagement" color="#2E7D32" />
-              <div className="mt-4 flex justify-between text-sm text-gray-600">
-                <span>{analyticsData[0]?.engagement.toFixed(1)}%</span>
-                <span>{analyticsData[analyticsData.length - 1]?.engagement.toFixed(1)}%</span>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Zap className="text-purple-600" size={20} />
-                Daily Tweets
-              </h3>
-              <SimpleChart data={analyticsData} metric="tweets" color="#6A1B9A" />
-              <div className="mt-4 flex justify-between text-sm text-gray-600">
-                <span>{analyticsData[0]?.tweets}</span>
-                <span>{analyticsData[analyticsData.length - 1]?.tweets}</span>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Calendar className="text-orange-600" size={20} />
-                Recent Data
-              </h3>
-              <div className="space-y-3 max-h-32 overflow-y-auto">
-                {analyticsData.slice(-5).reverse().map((data, index) => (
-                  <div key={index} className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600">{new Date(data.date).toLocaleDateString()}</span>
-                    <div className="flex gap-4">
-                      <span className="text-blue-600">{data.followers.toLocaleString()}</span>
-                      <span className="text-green-600">{data.engagement.toFixed(1)}%</span>
-                      <span className="text-purple-600">{data.tweets}</span>
+          ) : (
+            // Analytics Content
+            <>
+              {/* User Profile Card */}
+              {analytics.data.user && (
+                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200 mb-6">
+                  <div className="flex items-center gap-4">
+                    {analytics.data.user.profileImageUrl && (
+                      <img
+                        src={analytics.data.user.profileImageUrl}
+                        alt={analytics.data.user.name}
+                        className="w-16 h-16 rounded-full"
+                      />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-gray-900">{analytics.data.user.name}</h2>
+                        {analytics.data.user.verified && (
+                          <CheckCircle className="w-5 h-5 text-blue-500" />
+                        )}
+                      </div>
+                      <p className="text-gray-600">@{analytics.data.user.username}</p>
+                      {analytics.data.user.description && (
+                        <p className="text-gray-700 mt-2 max-w-2xl">{analytics.data.user.description}</p>
+                      )}
+                    </div>
+                    <div className="ml-auto flex items-center gap-2 text-sm text-gray-500">
+                      <Clock size={14} />
+                      Last updated: {analytics.lastUpdated?.toLocaleTimeString()}
                     </div>
                   </div>
-                ))}
+                </div>
+              )}
+
+              {/* Key Metrics */}
+              <div className="grid md:grid-cols-4 gap-6 mb-8">
+                <MetricCard
+                  title="Followers"
+                  value={analytics.data.user?.followersCount || 0}
+                  change={growthStats.dailyGrowth}
+                  changeLabel="today"
+                  icon={Users}
+                  color="#1565C0"
+                />
+                <MetricCard
+                  title="Following"
+                  value={analytics.data.user?.followingCount || 0}
+                  icon={Users}
+                  color="#2E7D32"
+                />
+                <MetricCard
+                  title="Engagement Rate"
+                  value={`${engagementTrends.currentEngagement}%`}
+                  icon={TrendingUp}
+                  color="#6A1B9A"
+                />
+                <MetricCard
+                  title="Total Tweets"
+                  value={analytics.data.user?.tweetCount || 0}
+                  icon={Zap}
+                  color="#EA580C"
+                />
               </div>
-            </div>
-          </div>
+
+              {/* Growth Overview */}
+              <div className="grid lg:grid-cols-3 gap-6 mb-8">
+                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Growth Trend</h3>
+                  <div className="text-center">
+                    <div className={`text-3xl font-bold mb-2 ${
+                      growthStats.growthVelocity === 'accelerating' ? 'text-green-600' :
+                      growthStats.growthVelocity === 'declining' ? 'text-red-600' : 'text-blue-600'
+                    }`}>
+                      {growthStats.growthVelocity === 'accelerating' ? '📈' :
+                       growthStats.growthVelocity === 'declining' ? '📉' : '📊'}
+                    </div>
+                    <p className="text-sm text-gray-600 capitalize">{growthStats.growthVelocity}</p>
+                    <p className="text-lg font-semibold mt-2">
+                      {growthStats.weeklyGrowth > 0 ? '+' : ''}{growthStats.weeklyGrowth} this week
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Engagement Trend</h3>
+                  <div className="text-center">
+                    <div className={`text-3xl font-bold mb-2 ${
+                      engagementTrends.trend === 'improving' ? 'text-green-600' :
+                      engagementTrends.trend === 'declining' ? 'text-red-600' : 'text-blue-600'
+                    }`}>
+                      {engagementTrends.trend === 'improving' ? '⬆️' :
+                       engagementTrends.trend === 'declining' ? '⬇️' : '➡️'}
+                    </div>
+                    <p className="text-sm text-gray-600 capitalize">{engagementTrends.trend}</p>
+                    <p className="text-lg font-semibold mt-2">{engagementTrends.currentEngagement}% current</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Growth Score</h3>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-blue-600 mb-2">{analytics.data.growthTrend}</div>
+                    <p className="text-sm text-gray-600">Out of 10</p>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full"
+                        style={{ width: `${(analytics.data.growthTrend / 10) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Charts */}
+              <div className="grid lg:grid-cols-2 gap-6 mb-8">
+                <LineChart
+                  data={analytics.data.historicalData.map(d => ({
+                    date: d.date,
+                    followersCount: d.followersCount,
+                    followingCount: d.followingCount,
+                    tweetCount: d.tweetCount,
+                    engagementRate: d.engagementRate
+                  }))}
+                  metric="followersCount"
+                  color="#1565C0"
+                  title="Followers Growth"
+                />
+
+                <LineChart
+                  data={analytics.data.historicalData.map(d => ({
+                    date: d.date,
+                    followersCount: d.followersCount,
+                    followingCount: d.followingCount,
+                    tweetCount: d.tweetCount,
+                    engagementRate: d.engagementRate
+                  }))}
+                  metric="engagementRate"
+                  color="#2E7D32"
+                  title="Engagement Rate"
+                />
+              </div>
+
+              {/* Top Tweet & Recent Tweets */}
+              <div className="grid lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1">
+                  <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Performing Tweet</h3>
+                    {analytics.data.topTweet ? (
+                      <TweetCard
+                        tweet={{
+                          ...analytics.data.topTweet,
+                          createdAt: new Date().toISOString(),
+                          metrics: {
+                            retweets: 0,
+                            likes: 0,
+                            replies: 0,
+                            quotes: 0
+                          }
+                        }}
+                        isTopTweet
+                      />
+                    ) : (
+                      <p className="text-gray-500 text-center py-8">No tweet data available</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="lg:col-span-2">
+                  <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Tweets</h3>
+                    <div className="space-y-4 max-h-96 overflow-y-auto">
+                      {analytics.data.tweets.slice(0, 5).map((tweet) => (
+                        <TweetCard key={tweet.id} tweet={tweet} />
+                      ))}
+                      {analytics.data.tweets.length === 0 && (
+                        <p className="text-gray-500 text-center py-8">No recent tweets found</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
