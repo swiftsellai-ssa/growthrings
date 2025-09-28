@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail, BarChart3, Calendar, Activity } from 'lucide-react';
+import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail, BarChart3, Calendar, Activity, RefreshCw, Wifi, WifiOff, Key } from 'lucide-react';
+import { useXApi } from './hooks/useXApi';
 
 interface AnalyticsDataPoint {
   date: string;
@@ -127,6 +128,11 @@ export default function GrowthRingsApp() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [email, setEmail] = useState('');
   const [emailSubmitted, setEmailSubmitted] = useState(false);
+
+  // X API integration
+  const xApi = useXApi();
+  const [showXApiConfig, setShowXApiConfig] = useState(false);
+  const [bearerTokenInput, setBearerTokenInput] = useState('');
 
   // Tool state
   const [currentFollowers, setCurrentFollowers] = useState(2500);
@@ -536,6 +542,48 @@ export default function GrowthRingsApp() {
     }
   };
 
+  const handleXApiConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (bearerTokenInput.trim()) {
+      xApi.setBearerToken(bearerTokenInput.trim());
+      setShowXApiConfig(false);
+    }
+  };
+
+  const syncWithXApi = async () => {
+    if (xApi.isConfigured) {
+      await xApi.refreshData();
+      if (xApi.userData && !xApi.error) {
+        setCurrentFollowers(xApi.userData.followersCount);
+        // Update analytics with real data
+        const newDataPoint: AnalyticsDataPoint = {
+          date: new Date().toISOString().split('T')[0],
+          followers: xApi.userData.followersCount,
+          engagement: xApi.userData.engagementRate,
+          tweets: Math.floor(xApi.userData.tweetCount / 30) // Convert to daily average
+        };
+
+        setAnalyticsData(prev => {
+          const updated = [...prev];
+          const today = newDataPoint.date;
+          const existingIndex = updated.findIndex(d => d.date === today);
+
+          if (existingIndex >= 0) {
+            updated[existingIndex] = newDataPoint;
+          } else {
+            updated.push(newDataPoint);
+            // Keep only last 30 days
+            if (updated.length > 30) {
+              updated.shift();
+            }
+          }
+
+          return updated;
+        });
+      }
+    }
+  };
+
   // Clear errors when user changes settings
   useEffect(() => {
     setCanvasError(null);
@@ -623,6 +671,17 @@ export default function GrowthRingsApp() {
               </div>
               <div className="flex items-center gap-4">
                 <button
+                  onClick={() => setShowXApiConfig(true)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                    xApi.isConfigured
+                      ? 'bg-green-100 hover:bg-green-200 text-green-700'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  {xApi.isConfigured ? <Wifi size={16} /> : <WifiOff size={16} />}
+                  {xApi.isConfigured ? 'X Connected' : 'Connect X API'}
+                </button>
+                <button
                   onClick={() => {
                     setShowTool(false);
                     setShowAnalytics(true);
@@ -677,13 +736,38 @@ export default function GrowthRingsApp() {
                 {/* Values */}
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Current</label>
-                    <input
-                      type="number"
-                      value={currentFollowers}
-                      onChange={(e) => setCurrentFollowers(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Current {xApi.isConfigured && xApi.userData && (
+                        <span className="text-xs text-green-600 ml-1">(Live)</span>
+                      )}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={currentFollowers}
+                        onChange={(e) => setCurrentFollowers(Number(e.target.value))}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {xApi.isConfigured && (
+                        <button
+                          onClick={syncWithXApi}
+                          disabled={xApi.isLoading}
+                          className={`px-3 py-2 rounded-lg border transition-colors flex items-center ${
+                            xApi.isLoading
+                              ? 'border-gray-300 text-gray-400 cursor-not-allowed'
+                              : 'border-blue-500 text-blue-600 hover:bg-blue-50'
+                          }`}
+                          title="Sync with X API"
+                        >
+                          <RefreshCw size={16} className={xApi.isLoading ? 'animate-spin' : ''} />
+                        </button>
+                      )}
+                    </div>
+                    {xApi.userData && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Last updated: {xApi.lastUpdated?.toLocaleTimeString()}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Target</label>
@@ -695,6 +779,26 @@ export default function GrowthRingsApp() {
                     />
                   </div>
                 </div>
+
+                {/* X API Status */}
+                {xApi.error && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm font-medium text-red-800">X API Error</p>
+                    <p className="text-sm text-red-600 mt-1">{xApi.error}</p>
+                  </div>
+                )}
+
+                {xApi.userData && (
+                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm font-medium text-green-800 flex items-center gap-2">
+                      <Wifi size={14} />
+                      Connected to @{xApi.userData.username}
+                    </p>
+                    <p className="text-sm text-green-600 mt-1">
+                      {xApi.userData.followersCount.toLocaleString()} followers • {xApi.userData.engagementRate}% engagement
+                    </p>
+                  </div>
+                )}
 
                 {/* Timeframe */}
                 <div className="mb-4">
@@ -892,6 +996,73 @@ export default function GrowthRingsApp() {
             </div>
           </div>
         </div>
+
+        {/* X API Configuration Modal */}
+        {showXApiConfig && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+              <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Key className="text-blue-600" size={20} />
+                Connect X API
+              </h3>
+
+              <form onSubmit={handleXApiConfig} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    X API Bearer Token
+                  </label>
+                  <input
+                    type="password"
+                    value={bearerTokenInput}
+                    onChange={(e) => setBearerTokenInput(e.target.value)}
+                    placeholder="Enter your X API bearer token"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Get your bearer token from{' '}
+                    <a
+                      href="https://developer.x.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      X Developer Portal
+                    </a>
+                  </p>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-800 font-medium mb-1">Free Tier Limitations:</p>
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    <li>• Only your own account data available</li>
+                    <li>• Limited to basic follower count and engagement</li>
+                    <li>• 450 requests per 15-minute window</li>
+                  </ul>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowXApiConfig(false);
+                      setBearerTokenInput('');
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Connect
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
