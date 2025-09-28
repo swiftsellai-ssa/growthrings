@@ -341,19 +341,30 @@ export default function GrowthRingsApp() {
 
             // Add text elements
             try {
-              // Add percentage text - use debounced progress
-              ctx.fillStyle = '#FFFFFF';
+              // Add percentage text - use debounced progress with better contrast
               ctx.font = 'bold 28px Arial';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
+
+              // Add thick black outline for contrast
               ctx.strokeStyle = '#000000';
-              ctx.lineWidth = 3;
+              ctx.lineWidth = 6;
               ctx.strokeText(`${Math.round(debouncedProgressPercentage)}%`, centerX, centerY + 10);
+
+              // White fill on top
+              ctx.fillStyle = '#FFFFFF';
               ctx.fillText(`${Math.round(debouncedProgressPercentage)}%`, centerX, centerY + 10);
 
-              // Add goal label
-              ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+              // Add goal label with better contrast
               ctx.font = 'bold 14px Arial';
+
+              // Black outline for goal label
+              ctx.strokeStyle = '#000000';
+              ctx.lineWidth = 3;
+              ctx.strokeText(currentGoal.label.toUpperCase(), centerX, centerY + 40);
+
+              // White fill for goal label
+              ctx.fillStyle = '#FFFFFF';
               ctx.fillText(currentGoal.label.toUpperCase(), centerX, centerY + 40);
             } catch (error) {
               // Text rendering errors are non-critical, continue
@@ -494,7 +505,7 @@ export default function GrowthRingsApp() {
     }
   };
 
-  const downloadImage = () => {
+  const downloadImage = async () => {
     try {
       const canvas = canvasRef.current;
       if (!canvas) {
@@ -507,6 +518,25 @@ export default function GrowthRingsApp() {
         return;
       }
 
+      // Ensure canvas is fully rendered before download
+      await new Promise(resolve => requestAnimationFrame(resolve));
+
+      // Check if canvas has content
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        setCanvasError('Canvas context not available.');
+        return;
+      }
+
+      // Verify canvas has been drawn on
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hasContent = imageData.data.some(pixel => pixel !== 0);
+
+      if (!hasContent) {
+        setCanvasError('Canvas appears to be empty. Please regenerate your growth ring.');
+        return;
+      }
+
       const link = document.createElement('a');
       const timestamp = new Date().toISOString().split('T')[0];
       const filename = `growth-ring-${goalType}-${Math.round(progressPercentage)}%-${timestamp}.png`;
@@ -514,14 +544,16 @@ export default function GrowthRingsApp() {
       try {
         const dataUrl = canvas.toDataURL('image/png', 1.0);
 
-        if (!dataUrl || dataUrl === 'data:,') {
+        if (!dataUrl || dataUrl === 'data:,' || dataUrl.length < 100) {
           setCanvasError('Failed to export image. The canvas may be empty or corrupted.');
           return;
         }
 
         link.download = filename;
         link.href = dataUrl;
+        document.body.appendChild(link); // Ensure link is in DOM
         link.click();
+        document.body.removeChild(link); // Clean up
 
         // Clear any previous errors on successful download
         setCanvasError(null);
@@ -616,6 +648,32 @@ export default function GrowthRingsApp() {
       }
     }
   };
+
+  // Navigation functions with proper state cleanup
+  const navigateToTool = useCallback(() => {
+    setShowAnalytics(false);
+    setShowTool(true);
+    setCanvasError(null);
+    setImageError(null);
+    // Reset any other UI states as needed
+  }, []);
+
+  const navigateToAnalytics = useCallback(() => {
+    setShowTool(false);
+    setShowAnalytics(true);
+    setCanvasError(null);
+    setImageError(null);
+  }, []);
+
+  const navigateToHome = useCallback(() => {
+    setShowTool(false);
+    setShowAnalytics(false);
+    setShowXApiConfig(false);
+    setCanvasError(null);
+    setImageError(null);
+    setBearerTokenInput('');
+    // Reset modal states and clear any errors
+  }, []);
 
   // Handle escape key for modal
   useEffect(() => {
@@ -743,17 +801,14 @@ export default function GrowthRingsApp() {
                   {xApi.isConfigured ? 'X Connected' : 'Connect X API'}
                 </button>
                 <button
-                  onClick={() => {
-                    setShowTool(false);
-                    setShowAnalytics(true);
-                  }}
+                  onClick={navigateToAnalytics}
                   className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                 >
                   <BarChart3 size={16} />
                   Analytics
                 </button>
                 <button
-                  onClick={() => setShowTool(false)}
+                  onClick={navigateToHome}
                   className="text-gray-600 hover:text-gray-900"
                 >
                   ← Back to Home
@@ -1208,17 +1263,14 @@ export default function GrowthRingsApp() {
               </div>
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => {
-                    setShowAnalytics(false);
-                    setShowTool(true);
-                  }}
+                  onClick={navigateToTool}
                   className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                 >
                   <Target size={16} />
                   Ring Tool
                 </button>
                 <button
-                  onClick={() => setShowAnalytics(false)}
+                  onClick={navigateToHome}
                   className="text-gray-600 hover:text-gray-900"
                 >
                   ← Back to Home
@@ -1371,14 +1423,14 @@ export default function GrowthRingsApp() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-6">
             <button
-              onClick={() => setShowTool(true)}
+              onClick={navigateToTool}
               className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-colors flex items-center gap-2 shadow-lg"
             >
               Create My Growth Ring
               <ArrowRight size={20} />
             </button>
             <button
-              onClick={() => setShowAnalytics(true)}
+              onClick={navigateToAnalytics}
               className="bg-white border-2 border-blue-500 text-blue-600 hover:bg-blue-50 px-8 py-4 rounded-xl font-semibold text-lg transition-colors flex items-center gap-2"
             >
               <BarChart3 size={20} />
@@ -1536,7 +1588,7 @@ export default function GrowthRingsApp() {
           
           <div className="mt-8">
             <button
-              onClick={() => setShowTool(true)}
+              onClick={navigateToTool}
               className="bg-white text-blue-600 hover:bg-gray-100 px-8 py-4 rounded-xl font-semibold text-lg transition-colors inline-flex items-center gap-2"
             >
               Try Free Tool Now
