@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Sparkles, Star, ArrowRight, Mail } from 'lucide-react';
+import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail } from 'lucide-react';
 
 export default function GrowthRingsApp() {
   const [showTool, setShowTool] = useState(false);
@@ -11,19 +11,19 @@ export default function GrowthRingsApp() {
   // Tool state
   const [currentFollowers, setCurrentFollowers] = useState(2500);
   const [targetFollowers, setTargetFollowers] = useState(10000);
-  const [profileImage, setProfileImage] = useState(null);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
   const [goalType, setGoalType] = useState('followers');
   const [timeframe, setTimeframe] = useState('3months');
   const [ringStyle, setRingStyle] = useState('classic');
   const [showCanvas, setShowCanvas] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const canvasRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const goalTypes = {
-    followers: { icon: Users, label: 'Followers', color: '#1DA1F2', format: (val) => val.toLocaleString() },
-    engagement: { icon: TrendingUp, label: 'Engagement Rate', color: '#17BF63', suffix: '%', format: (val) => val.toFixed(1) },
-    tweets: { icon: Zap, label: 'Monthly Tweets', color: '#8B5CF6', format: (val) => val.toString() }
+    followers: { icon: Users, label: 'Followers', color: '#1DA1F2', format: (val: number) => val.toLocaleString() },
+    engagement: { icon: TrendingUp, label: 'Engagement Rate', color: '#17BF63', suffix: '%', format: (val: number) => val.toFixed(1) },
+    tweets: { icon: Zap, label: 'Monthly Tweets', color: '#8B5CF6', format: (val: number) => val.toString() }
   };
 
   const ringStyles = {
@@ -39,15 +39,16 @@ export default function GrowthRingsApp() {
   };
 
   const progressPercentage = Math.min((currentFollowers / targetFollowers) * 100, 100);
-  const currentGoal = goalTypes[goalType];
+  const currentGoal = goalTypes[goalType as keyof typeof goalTypes];
 
   const generateRingOverlay = async () => {
     if (!profileImage) return;
-    
+
     setIsGenerating(true);
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const size = 400;
     
@@ -83,7 +84,7 @@ export default function GrowthRingsApp() {
       ctx.beginPath();
       ctx.arc(centerX, centerY, radius, startAngle, endAngle);
       
-      if (ringStyles[ringStyle].gradient) {
+      if (ringStyles[ringStyle as keyof typeof ringStyles].gradient) {
         const gradient = ctx.createLinearGradient(0, 0, size, size);
         gradient.addColorStop(0, currentGoal.color);
         gradient.addColorStop(1, currentGoal.color + '80');
@@ -95,7 +96,7 @@ export default function GrowthRingsApp() {
       ctx.lineWidth = lineWidth;
       ctx.lineCap = 'round';
       
-      if (ringStyles[ringStyle].glow) {
+      if (ringStyles[ringStyle as keyof typeof ringStyles].glow) {
         ctx.shadowColor = currentGoal.color;
         ctx.shadowBlur = 15;
       }
@@ -151,7 +152,7 @@ export default function GrowthRingsApp() {
     img.src = profileImage;
   };
 
-  const handleImageUpload = (event) => {
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files[0];
     if (file && file.type.startsWith('image/')) {
       if (file.size > 5 * 1024 * 1024) {
@@ -161,7 +162,9 @@ export default function GrowthRingsApp() {
       
       const reader = new FileReader();
       reader.onload = (e) => {
-        setProfileImage(e.target.result);
+        if (e.target?.result && typeof e.target.result === 'string') {
+          setProfileImage(e.target.result);
+        }
         setShowCanvas(false);
       };
       reader.readAsDataURL(file);
@@ -170,6 +173,7 @@ export default function GrowthRingsApp() {
 
   const downloadImage = () => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const link = document.createElement('a');
     const timestamp = new Date().toISOString().split('T')[0];
     link.download = `growth-ring-${goalType}-${Math.round(progressPercentage)}%-${timestamp}.png`;
@@ -177,7 +181,7 @@ export default function GrowthRingsApp() {
     link.click();
   };
 
-  const handleEmailSubmit = (e) => {
+  const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (email) {
       // Here you would normally send to your email service
