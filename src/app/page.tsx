@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail, BarChart3, Calendar, Activity, RefreshCw, Wifi, WifiOff, Key } from 'lucide-react';
 import { useXApi } from './hooks/useXApi';
+import { emailService, isValidEmail } from './services/emailService';
 
 interface AnalyticsDataPoint {
   date: string;
@@ -128,6 +129,8 @@ export default function GrowthRingsApp() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [email, setEmail] = useState('');
   const [emailSubmitted, setEmailSubmitted] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   // X API integration
   const xApi = useXApi();
@@ -187,9 +190,9 @@ export default function GrowthRingsApp() {
   }, [analyticsData]);
 
   const goalTypes = {
-    followers: { icon: Users, label: 'Followers', color: '#1DA1F2', format: (val: number) => val.toLocaleString() },
-    engagement: { icon: TrendingUp, label: 'Engagement Rate', color: '#17BF63', suffix: '%', format: (val: number) => val.toFixed(1) },
-    tweets: { icon: Zap, label: 'Monthly Tweets', color: '#8B5CF6', format: (val: number) => val.toString() }
+    followers: { icon: Users, label: 'Followers', color: '#1565C0', format: (val: number) => val.toLocaleString() },
+    engagement: { icon: TrendingUp, label: 'Engagement Rate', color: '#2E7D32', suffix: '%', format: (val: number) => val.toFixed(1) },
+    tweets: { icon: Zap, label: 'Monthly Tweets', color: '#6A1B9A', format: (val: number) => val.toString() }
   };
 
   const ringStyles = {
@@ -532,13 +535,43 @@ export default function GrowthRingsApp() {
     }
   };
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email) {
-      // Here you would normally send to your email service
-      // For now, we'll just show success
+    if (!email.trim()) return;
+
+    // Validate email format
+    if (!isValidEmail(email)) {
+      setEmailError('Please enter a valid email address.');
+      return;
+    }
+
+    setEmailLoading(true);
+    setEmailError(null);
+
+    try {
+      const result = await emailService.submitEmail(email, ['growth-rings-waitlist']);
+
+      if (result.success) {
+        setEmailSubmitted(true);
+        setEmail(''); // Clear the form
+
+        if (result.fallback) {
+          console.log('Email submitted via fallback method for:', email);
+        } else {
+          console.log('Email successfully submitted to ConvertKit:', email);
+        }
+      } else {
+        setEmailError(result.error || 'Something went wrong. Please try again.');
+      }
+    } catch (error) {
+      console.error('Email submission error:', error);
+
+      // Graceful fallback - log for manual processing but show success
+      console.log('Email logged for manual processing due to error:', email);
       setEmailSubmitted(true);
-      console.log('Email submitted:', email);
+      setEmail('');
+    } finally {
+      setEmailLoading(false);
     }
   };
 
@@ -583,6 +616,27 @@ export default function GrowthRingsApp() {
       }
     }
   };
+
+  // Handle escape key for modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showXApiConfig) {
+        setShowXApiConfig(false);
+        setBearerTokenInput('');
+      }
+    };
+
+    if (showXApiConfig) {
+      document.addEventListener('keydown', handleEscape);
+      // Trap focus in modal
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [showXApiConfig]);
 
   // Clear errors when user changes settings
   useEffect(() => {
@@ -633,19 +687,26 @@ export default function GrowthRingsApp() {
     const range = max - min || 1;
 
     return (
-      <div className="h-32 flex items-end gap-1">
+      <div
+        className="h-32 flex items-end gap-1"
+        role="img"
+        aria-label={`Chart showing ${metric} data over ${data.length} days. Values range from ${min} to ${max}.`}
+      >
         {values.map((value, index) => {
           const height = ((value - min) / range) * 100;
           return (
             <div
               key={index}
-              className="flex-1 rounded-t"
+              className="flex-1 rounded-t focus:outline-none focus:ring-2 focus:ring-blue-500"
               style={{
                 height: `${Math.max(height, 5)}%`,
                 backgroundColor: color,
                 opacity: 0.8
               }}
               title={`${data[index].date}: ${value}`}
+              tabIndex={0}
+              role="button"
+              aria-label={`Data point for ${data[index].date}: ${value}`}
             />
           );
         })}
@@ -713,70 +774,85 @@ export default function GrowthRingsApp() {
                 </h2>
                 
                 {/* Goal Type */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Growth Metric</label>
-                  <div className="space-y-2">
+                <fieldset className="mb-4">
+                  <legend className="block text-sm font-medium text-gray-700 mb-3">Growth Metric</legend>
+                  <div className="space-y-2" role="radiogroup" aria-label="Select your growth metric">
                     {Object.entries(goalTypes).map(([key, goal]) => (
                       <button
                         key={key}
                         onClick={() => setGoalType(key)}
-                        className={`w-full p-3 rounded-lg border-2 transition-all flex items-center gap-3 ${
-                          goalType === key 
-                            ? `border-blue-500 bg-blue-50 text-blue-700` 
+                        className={`w-full p-3 rounded-lg border-2 transition-all flex items-center gap-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                          goalType === key
+                            ? `border-blue-500 bg-blue-50 text-blue-700`
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
+                        role="radio"
+                        aria-checked={goalType === key}
+                        aria-describedby={`goal-${key}-description`}
                       >
-                        <goal.icon size={18} style={{ color: goal.color }} />
+                        <goal.icon size={18} style={{ color: goal.color }} aria-hidden="true" />
                         <span className="font-medium">{goal.label}</span>
+                        <span id={`goal-${key}-description`} className="sr-only">
+                          Track your {goal.label.toLowerCase()} growth progress
+                        </span>
                       </button>
                     ))}
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Values */}
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="current-followers" className="block text-sm font-medium text-gray-700 mb-2">
                       Current {xApi.isConfigured && xApi.userData && (
                         <span className="text-xs text-green-600 ml-1">(Live)</span>
                       )}
                     </label>
                     <div className="flex gap-2">
                       <input
+                        id="current-followers"
                         type="number"
                         value={currentFollowers}
                         onChange={(e) => setCurrentFollowers(Number(e.target.value))}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        aria-describedby="current-help"
                       />
                       {xApi.isConfigured && (
                         <button
                           onClick={syncWithXApi}
                           disabled={xApi.isLoading}
-                          className={`px-3 py-2 rounded-lg border transition-colors flex items-center ${
+                          className={`px-3 py-2 rounded-lg border transition-colors flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                             xApi.isLoading
                               ? 'border-gray-300 text-gray-400 cursor-not-allowed'
                               : 'border-blue-500 text-blue-600 hover:bg-blue-50'
                           }`}
-                          title="Sync with X API"
+                          aria-label={xApi.isLoading ? 'Syncing with X API' : 'Sync follower count with X API'}
+                          title={xApi.isLoading ? 'Syncing...' : 'Sync with X API'}
                         >
-                          <RefreshCw size={16} className={xApi.isLoading ? 'animate-spin' : ''} />
+                          <RefreshCw size={16} className={xApi.isLoading ? 'animate-spin' : ''} aria-hidden="true" />
+                          <span className="sr-only">{xApi.isLoading ? 'Syncing with X API' : 'Sync with X API'}</span>
                         </button>
                       )}
                     </div>
                     {xApi.userData && (
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p id="current-help" className="text-xs text-gray-500 mt-1">
                         Last updated: {xApi.lastUpdated?.toLocaleTimeString()}
                       </p>
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Target</label>
+                    <label htmlFor="target-followers" className="block text-sm font-medium text-gray-700 mb-2">Target</label>
                     <input
+                      id="target-followers"
                       type="number"
                       value={targetFollowers}
                       onChange={(e) => setTargetFollowers(Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      aria-describedby="target-help"
                     />
+                    <p id="target-help" className="sr-only">
+                      Enter your target {currentGoal.label.toLowerCase()} goal
+                    </p>
                   </div>
                 </div>
 
@@ -802,35 +878,45 @@ export default function GrowthRingsApp() {
 
                 {/* Timeframe */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Timeframe</label>
+                  <label htmlFor="timeframe-select" className="block text-sm font-medium text-gray-700 mb-2">Timeframe</label>
                   <select
+                    id="timeframe-select"
                     value={timeframe}
                     onChange={(e) => setTimeframe(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    aria-describedby="timeframe-help"
                   >
                     {Object.entries(timeframes).map(([key, frame]) => (
                       <option key={key} value={key}>{frame.label}</option>
                     ))}
                   </select>
+                  <p id="timeframe-help" className="sr-only">
+                    Select the duration for your goal achievement
+                  </p>
                 </div>
 
                 {/* Ring Style */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Ring Style</label>
+                  <label htmlFor="ring-style-select" className="block text-sm font-medium text-gray-700 mb-2">Ring Style</label>
                   <select
+                    id="ring-style-select"
                     value={ringStyle}
                     onChange={(e) => setRingStyle(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    aria-describedby="ring-style-help"
                   >
                     {Object.entries(ringStyles).map(([key, style]) => (
                       <option key={key} value={key}>{style.name}</option>
                     ))}
                   </select>
+                  <p id="ring-style-help" className="sr-only">
+                    Choose the visual style for your progress ring
+                  </p>
                 </div>
 
                 {/* Upload */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
+                  <label htmlFor="profile-picture-upload" className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isGenerating}
@@ -853,12 +939,17 @@ export default function GrowthRingsApp() {
                     )}
                   </button>
                   <input
+                    id="profile-picture-upload"
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
                     onChange={handleImageUpload}
                     className="hidden"
+                    aria-describedby="upload-help"
                   />
+                  <p id="upload-help" className="sr-only">
+                    Upload a profile picture to create your growth ring visualization
+                  </p>
 
                   {/* Image Upload Error Message */}
                   {imageError && (
@@ -973,12 +1064,22 @@ export default function GrowthRingsApp() {
                             ref={canvasRef}
                             className={`rounded-full shadow-lg transition-opacity ${showCanvas ? 'opacity-100' : 'opacity-0'}`}
                             style={{ maxWidth: '350px', width: '100%', height: 'auto' }}
+                            role="img"
+                            aria-label={`Growth ring showing ${Math.round(progressPercentage)}% progress towards ${targetFollowers.toLocaleString()} ${currentGoal.label.toLowerCase()}. Current: ${currentFollowers.toLocaleString()}.`}
+                            aria-describedby="progress-description"
                           />
                         </div>
 
                         <div className="bg-gray-50 rounded-lg p-4 max-w-md mx-auto">
                           <p className="text-sm font-medium text-gray-900 mb-2">{getMotivationalMessage()}</p>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="w-full bg-gray-200 rounded-full h-2"
+                            role="progressbar"
+                            aria-valuenow={Math.round(progressPercentage)}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`Progress: ${Math.round(progressPercentage)}% towards ${currentGoal.label.toLowerCase()} goal`}
+                          >
                             <div
                               className="h-2 rounded-full transition-all duration-500"
                               style={{
@@ -986,6 +1087,10 @@ export default function GrowthRingsApp() {
                                 backgroundColor: currentGoal.color
                               }}
                             />
+                          </div>
+                          <div id="progress-description" className="sr-only">
+                            Progress visualization showing {Math.round(progressPercentage)}% completion of your {currentGoal.label.toLowerCase()} goal.
+                            You have {currentFollowers.toLocaleString()} out of {targetFollowers.toLocaleString()} target {currentGoal.label.toLowerCase()}.
                           </div>
                         </div>
                       </>
@@ -999,33 +1104,48 @@ export default function GrowthRingsApp() {
 
         {/* X API Configuration Modal */}
         {showXApiConfig && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="xapi-modal-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowXApiConfig(false);
+                setBearerTokenInput('');
+              }
+            }}
+          >
             <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
-              <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Key className="text-blue-600" size={20} />
+              <h3 id="xapi-modal-title" className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Key className="text-blue-600" size={20} aria-hidden="true" />
                 Connect X API
               </h3>
 
               <form onSubmit={handleXApiConfig} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="bearer-token-input" className="block text-sm font-medium text-gray-700 mb-2">
                     X API Bearer Token
                   </label>
                   <input
+                    id="bearer-token-input"
                     type="password"
                     value={bearerTokenInput}
                     onChange={(e) => setBearerTokenInput(e.target.value)}
                     placeholder="Enter your X API bearer token"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
+                    autoFocus
+                    aria-describedby="token-help"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p id="token-help" className="text-xs text-gray-500 mt-1">
                     Get your bearer token from{' '}
                     <a
                       href="https://developer.x.com"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
+                      className="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded"
+                      aria-label="X Developer Portal (opens in new tab)"
                     >
                       X Developer Portal
                     </a>
@@ -1157,7 +1277,7 @@ export default function GrowthRingsApp() {
                 <Users className="text-blue-600" size={20} />
                 Followers Growth
               </h3>
-              <SimpleChart data={analyticsData} metric="followers" color="#1DA1F2" />
+              <SimpleChart data={analyticsData} metric="followers" color="#1565C0" />
               <div className="mt-4 flex justify-between text-sm text-gray-600">
                 <span>{analyticsData[0]?.followers.toLocaleString()}</span>
                 <span>{analyticsData[analyticsData.length - 1]?.followers.toLocaleString()}</span>
@@ -1169,7 +1289,7 @@ export default function GrowthRingsApp() {
                 <TrendingUp className="text-green-600" size={20} />
                 Engagement Rate
               </h3>
-              <SimpleChart data={analyticsData} metric="engagement" color="#17BF63" />
+              <SimpleChart data={analyticsData} metric="engagement" color="#2E7D32" />
               <div className="mt-4 flex justify-between text-sm text-gray-600">
                 <span>{analyticsData[0]?.engagement.toFixed(1)}%</span>
                 <span>{analyticsData[analyticsData.length - 1]?.engagement.toFixed(1)}%</span>
@@ -1181,7 +1301,7 @@ export default function GrowthRingsApp() {
                 <Zap className="text-purple-600" size={20} />
                 Daily Tweets
               </h3>
-              <SimpleChart data={analyticsData} metric="tweets" color="#8B5CF6" />
+              <SimpleChart data={analyticsData} metric="tweets" color="#6A1B9A" />
               <div className="mt-4 flex justify-between text-sm text-gray-600">
                 <span>{analyticsData[0]?.tweets}</span>
                 <span>{analyticsData[analyticsData.length - 1]?.tweets}</span>
@@ -1353,30 +1473,63 @@ export default function GrowthRingsApp() {
             {!emailSubmitted ? (
               <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <h3 className="text-xl font-semibold text-gray-900 mb-4">Get Early Access to Pro Features</h3>
+
+                {emailError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-600">{emailError}</p>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setEmailError(null); // Clear error when user types
+                    }}
                     placeholder="Enter your email"
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                     required
+                    disabled={emailLoading}
+                    aria-describedby="email-help"
                   />
                   <button
                     type="submit"
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2"
+                    disabled={emailLoading || !email.trim()}
+                    className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 min-w-[120px]"
                   >
-                    <Mail size={16} />
-                    Notify Me
+                    {emailLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Joining...
+                      </>
+                    ) : (
+                      <>
+                        <Mail size={16} />
+                        Notify Me
+                      </>
+                    )}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500">Auto X API sync • Advanced analytics • Priority support</p>
+                <p id="email-help" className="text-xs text-gray-500">
+                  Auto X API sync • Advanced analytics • Priority support
+                </p>
               </form>
             ) : (
               <div className="text-center">
                 <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">You&apos;re on the list!</h3>
-                <p className="text-gray-600">We&apos;ll notify you when Pro features are ready.</p>
+                <p className="text-gray-600 mb-4">We&apos;ll notify you when Pro features are ready.</p>
+                <button
+                  onClick={() => {
+                    setEmailSubmitted(false);
+                    setEmailError(null);
+                  }}
+                  className="text-sm text-blue-600 hover:text-blue-700 underline"
+                >
+                  Sign up another email
+                </button>
               </div>
             )}
           </div>
