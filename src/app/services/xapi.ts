@@ -53,7 +53,7 @@ interface XApiResponse<T> {
 
 export class XApiService {
   private config: XApiConfig;
-  private baseUrl = 'https://api.x.com/2';
+  private baseUrl = '/api/x';
 
   constructor(config: XApiConfig) {
     this.config = config;
@@ -61,7 +61,7 @@ export class XApiService {
 
   private async makeRequest<T>(endpoint: string): Promise<T> {
     try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      const response = await fetch(`${this.baseUrl}?endpoint=${encodeURIComponent(endpoint)}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${this.config.bearerToken}`,
@@ -91,6 +91,10 @@ export class XApiService {
       return data;
     } catch (error) {
       if (error instanceof Error) {
+        // Check for CORS/network errors
+        if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
+          throw new Error('Cannot connect to X API. Please check your bearer token and internet connection.');
+        }
         throw error;
       }
       throw new Error('Failed to connect to X API. Please check your internet connection.');
