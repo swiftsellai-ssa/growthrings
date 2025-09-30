@@ -1,53 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Target, Users, TrendingUp, Trophy, ArrowRight, Mail, BarChart3, Star, CheckCircle } from 'lucide-react';
+import React from 'react';
+import { Target, Users, TrendingUp, Trophy, ArrowRight, BarChart3, Star } from 'lucide-react';
 import { useNavigation } from '../hooks/useNavigation';
-import { emailService, isValidEmail } from '../services/emailService';
+import { ConvertKitForm } from './ConvertKitForm';
 
 export const LandingPage: React.FC = () => {
   const { navigateToTool, navigateToAnalytics } = useNavigation();
-  const [email, setEmail] = useState('');
-  const [emailSubmitted, setEmailSubmitted] = useState(false);
-  const [emailLoading, setEmailLoading] = useState(false);
-  const [emailError, setEmailError] = useState<string | null>(null);
-
-  const handleEmailSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) return;
-
-    if (!isValidEmail(email)) {
-      setEmailError('Please enter a valid email address.');
-      return;
-    }
-
-    setEmailLoading(true);
-    setEmailError(null);
-
-    try {
-      const result = await emailService.submitEmail(email, ['growth-rings-waitlist']);
-
-      if (result.success) {
-        setEmailSubmitted(true);
-        setEmail('');
-
-        if (result.fallback) {
-          console.log('Email submitted via fallback method for:', email);
-        } else {
-          console.log('Email successfully submitted to ConvertKit:', email);
-        }
-      } else {
-        setEmailError(result.error || 'Something went wrong. Please try again.');
-      }
-    } catch (error) {
-      console.error('Email submission error:', error);
-      console.log('Email logged for manual processing due to error:', email);
-      setEmailSubmitted(true);
-      setEmail('');
-    } finally {
-      setEmailLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -186,69 +145,9 @@ export const LandingPage: React.FC = () => {
           <h2 className="text-4xl font-bold text-white mb-6">Ready to Visualize Your Growth?</h2>
           <p className="text-xl text-blue-100 mb-8">Join creators who are turning their X growth into visual progress rings</p>
 
-          <div className="bg-white rounded-2xl p-8 max-w-md mx-auto">
-            {!emailSubmitted ? (
-              <form onSubmit={handleEmailSubmit} className="space-y-4">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">Get Early Access to Pro Features</h3>
-
-                {emailError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-600">{emailError}</p>
-                  </div>
-                )}
-
-                <div className="flex gap-3">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      setEmailError(null);
-                    }}
-                    placeholder="Enter your email"
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                    required
-                    disabled={emailLoading}
-                    aria-describedby="email-help"
-                  />
-                  <button
-                    type="submit"
-                    disabled={emailLoading || !email.trim()}
-                    className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 min-w-[120px]"
-                  >
-                    {emailLoading ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        Joining...
-                      </>
-                    ) : (
-                      <>
-                        <Mail size={16} />
-                        Notify Me
-                      </>
-                    )}
-                  </button>
-                </div>
-                <p id="email-help" className="text-xs text-gray-500">
-                  Auto X API sync • Advanced analytics • Priority support
-                </p>
-              </form>
-            ) : (
-              <div className="text-center">
-                <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">You&apos;re on the list!</h3>
-                <p className="text-gray-600 mb-4">We&apos;ll notify you when Pro features are ready.</p>
-                <button
-                  onClick={() => {
-                    setEmailSubmitted(false);
-                    setEmailError(null);
-                  }}
-                  className="text-sm text-blue-600 hover:text-blue-700 underline"
-                >
-                  Sign up another email
-                </button>
-              </div>
-            )}
+          <div className="bg-white rounded-2xl p-8 max-w-2xl mx-auto">
+            <h3 className="text-xl font-semibold text-gray-900 mb-6 text-center">Get Early Access to Pro Features</h3>
+            <ConvertKitForm />
           </div>
 
           <div className="mt-8">

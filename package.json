@@ -6,11 +6,16 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "setup": "node scripts/setup-env.js",
+    "env:validate": "node -e \"require('./src/app/lib/env').validateEnv()\""
   },
   "dependencies": {
+    "@auth0/nextjs-auth0": "^4.10.0",
+    "jose": "^6.1.0",
     "lucide-react": "^0.544.0",
     "next": "15.5.4",
+    "oauth4webapi": "^3.8.2",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },

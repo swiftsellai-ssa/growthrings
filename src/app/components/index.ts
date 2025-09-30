@@ -6,4 +6,7 @@ export { PreviewCard } from './PreviewCard';
 export { GoalTypeSelector } from './GoalTypeSelector';
 export { XApiStatus } from './XApiStatus';
 export { ImageUploader } from './ImageUploader';
+export { SignInButton, CompactSignInButton, HeroSignInButton } from './SignInButton';
+export { LogoutButton, CompactLogoutButton, IconLogoutButton, LogoutMenuItem } from './LogoutButton';
+export { ConvertKitForm } from './ConvertKitForm';
 export { LineChart, MetricCard, TweetCard } from './AnalyticsCharts';
