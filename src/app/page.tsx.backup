@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail, BarChart3, Calendar, Activity } from 'lucide-react';
-import { XApiService } from './services/xapi';
+import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail, BarChart3, RefreshCw, Wifi, WifiOff, Key, AlertCircle, Clock } from 'lucide-react';
+import { useXApi } from './hooks/useXApi';
 import { useAnalytics } from './hooks/useAnalytics';
+import { emailService, isValidEmail } from './services/emailService';
 import { LineChart, MetricCard, TweetCard } from './components/AnalyticsCharts';
 
 interface AnalyticsDataPoint {
@@ -130,6 +131,16 @@ export default function GrowthRingsApp() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [email, setEmail] = useState('');
   const [emailSubmitted, setEmailSubmitted] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+
+  // X API integration
+  const xApi = useXApi();
+  const [showXApiConfig, setShowXApiConfig] = useState(false);
+  const [bearerTokenInput, setBearerTokenInput] = useState('');
+
+  // Analytics integration
+  const analytics = useAnalytics(xApi.isConfigured ? bearerTokenInput || localStorage.getItem('xapi_token') || undefined : undefined);
 
   // Tool state
   const [currentFollowers, setCurrentFollowers] = useState(2500);
@@ -184,9 +195,9 @@ export default function GrowthRingsApp() {
   }, [analyticsData]);
 
   const goalTypes = {
-    followers: { icon: Users, label: 'Followers', color: '#1DA1F2', format: (val: number) => val.toLocaleString() },
-    engagement: { icon: TrendingUp, label: 'Engagement Rate', color: '#17BF63', suffix: '%', format: (val: number) => val.toFixed(1) },
-    tweets: { icon: Zap, label: 'Monthly Tweets', color: '#8B5CF6', format: (val: number) => val.toString() }
+    followers: { icon: Users, label: 'Followers', color: '#1565C0', format: (val: number) => val.toLocaleString() },
+    engagement: { icon: TrendingUp, label: 'Engagement Rate', color: '#2E7D32', suffix: '%', format: (val: number) => val.toFixed(1) },
+    tweets: { icon: Zap, label: 'Monthly Tweets', color: '#6A1B9A', format: (val: number) => val.toString() }
   };
 
   const ringStyles = {
@@ -273,7 +284,7 @@ export default function GrowthRingsApp() {
             // Draw image with error handling
             try {
               ctx.drawImage(img, 0, 0, size, size);
-            } catch (error) {
+            } catch {
               setCanvasError('Failed to draw image on canvas. The image may be corrupted.');
               setIsGenerating(false);
               return;
@@ -293,7 +304,7 @@ export default function GrowthRingsApp() {
               ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
               ctx.lineWidth = lineWidth;
               ctx.stroke();
-            } catch (error) {
+            } catch {
               setCanvasError('Failed to draw background ring.');
               setIsGenerating(false);
               return;
@@ -327,7 +338,7 @@ export default function GrowthRingsApp() {
 
               ctx.stroke();
               ctx.shadowBlur = 0;
-            } catch (error) {
+            } catch {
               setCanvasError('Failed to draw progress ring.');
               setIsGenerating(false);
               return;
@@ -335,19 +346,30 @@ export default function GrowthRingsApp() {
 
             // Add text elements
             try {
-              // Add percentage text - use debounced progress
-              ctx.fillStyle = '#FFFFFF';
+              // Add percentage text - use debounced progress with better contrast
               ctx.font = 'bold 28px Arial';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
+
+              // Add thick black outline for contrast
               ctx.strokeStyle = '#000000';
-              ctx.lineWidth = 3;
+              ctx.lineWidth = 6;
               ctx.strokeText(`${Math.round(debouncedProgressPercentage)}%`, centerX, centerY + 10);
+
+              // White fill on top
+              ctx.fillStyle = '#FFFFFF';
               ctx.fillText(`${Math.round(debouncedProgressPercentage)}%`, centerX, centerY + 10);
 
-              // Add goal label
-              ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+              // Add goal label with better contrast
               ctx.font = 'bold 14px Arial';
+
+              // Black outline for goal label
+              ctx.strokeStyle = '#000000';
+              ctx.lineWidth = 3;
+              ctx.strokeText(currentGoal.label.toUpperCase(), centerX, centerY + 40);
+
+              // White fill for goal label
+              ctx.fillStyle = '#FFFFFF';
               ctx.fillText(currentGoal.label.toUpperCase(), centerX, centerY + 40);
             } catch (error) {
               // Text rendering errors are non-critical, continue
@@ -408,7 +430,7 @@ export default function GrowthRingsApp() {
         // Load the image
         try {
           img.src = profileImage;
-        } catch (error) {
+        } catch {
           clearTimeout(imageTimeout);
           setCanvasError('Failed to set image source. Please try uploading the image again.');
           setIsGenerating(false);
@@ -488,7 +510,7 @@ export default function GrowthRingsApp() {
     }
   };
 
-  const downloadImage = () => {
+  const downloadImage = async () => {
     try {
       const canvas = canvasRef.current;
       if (!canvas) {
@@ -501,6 +523,25 @@ export default function GrowthRingsApp() {
         return;
       }
 
+      // Ensure canvas is fully rendered before download
+      await new Promise(resolve => requestAnimationFrame(resolve));
+
+      // Check if canvas has content
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        setCanvasError('Canvas context not available.');
+        return;
+      }
+
+      // Verify canvas has been drawn on
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hasContent = imageData.data.some(pixel => pixel !== 0);
+
+      if (!hasContent) {
+        setCanvasError('Canvas appears to be empty. Please regenerate your growth ring.');
+        return;
+      }
+
       const link = document.createElement('a');
       const timestamp = new Date().toISOString().split('T')[0];
       const filename = `growth-ring-${goalType}-${Math.round(progressPercentage)}%-${timestamp}.png`;
@@ -508,14 +549,16 @@ export default function GrowthRingsApp() {
       try {
         const dataUrl = canvas.toDataURL('image/png', 1.0);
 
-        if (!dataUrl || dataUrl === 'data:,') {
+        if (!dataUrl || dataUrl === 'data:,' || dataUrl.length < 100) {
           setCanvasError('Failed to export image. The canvas may be empty or corrupted.');
           return;
         }
 
         link.download = filename;
         link.href = dataUrl;
+        document.body.appendChild(link); // Ensure link is in DOM
         link.click();
+        document.body.removeChild(link); // Clean up
 
         // Clear any previous errors on successful download
         setCanvasError(null);
@@ -529,15 +572,137 @@ export default function GrowthRingsApp() {
     }
   };
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email) {
-      // Here you would normally send to your email service
-      // For now, we'll just show success
+    if (!email.trim()) return;
+
+    // Validate email format
+    if (!isValidEmail(email)) {
+      setEmailError('Please enter a valid email address.');
+      return;
+    }
+
+    setEmailLoading(true);
+    setEmailError(null);
+
+    try {
+      const result = await emailService.submitEmail(email, ['growth-rings-waitlist']);
+
+      if (result.success) {
+        setEmailSubmitted(true);
+        setEmail(''); // Clear the form
+
+        if (result.fallback) {
+          console.log('Email submitted via fallback method for:', email);
+        } else {
+          console.log('Email successfully submitted to ConvertKit:', email);
+        }
+      } else {
+        setEmailError(result.error || 'Something went wrong. Please try again.');
+      }
+    } catch (error) {
+      console.error('Email submission error:', error);
+
+      // Graceful fallback - log for manual processing but show success
+      console.log('Email logged for manual processing due to error:', email);
       setEmailSubmitted(true);
-      console.log('Email submitted:', email);
+      setEmail('');
+    } finally {
+      setEmailLoading(false);
     }
   };
+
+  const handleXApiConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (bearerTokenInput.trim()) {
+      const token = bearerTokenInput.trim();
+      xApi.setBearerToken(token);
+      // Store token for analytics (in production, use more secure storage)
+      localStorage.setItem('xapi_token', token);
+      setShowXApiConfig(false);
+    }
+  };
+
+  const syncWithXApi = async () => {
+    if (xApi.isConfigured) {
+      await xApi.refreshData();
+      if (xApi.userData && !xApi.error) {
+        setCurrentFollowers(xApi.userData.followersCount);
+        // Update analytics with real data
+        const newDataPoint: AnalyticsDataPoint = {
+          date: new Date().toISOString().split('T')[0],
+          followers: xApi.userData.followersCount,
+          engagement: xApi.userData.engagementRate,
+          tweets: Math.floor(xApi.userData.tweetCount / 30) // Convert to daily average
+        };
+
+        setAnalyticsData(prev => {
+          const updated = [...prev];
+          const today = newDataPoint.date;
+          const existingIndex = updated.findIndex(d => d.date === today);
+
+          if (existingIndex >= 0) {
+            updated[existingIndex] = newDataPoint;
+          } else {
+            updated.push(newDataPoint);
+            // Keep only last 30 days
+            if (updated.length > 30) {
+              updated.shift();
+            }
+          }
+
+          return updated;
+        });
+      }
+    }
+  };
+
+  // Navigation functions with proper state cleanup
+  const navigateToTool = useCallback(() => {
+    setShowAnalytics(false);
+    setShowTool(true);
+    setCanvasError(null);
+    setImageError(null);
+    // Reset any other UI states as needed
+  }, []);
+
+  const navigateToAnalytics = useCallback(() => {
+    setShowTool(false);
+    setShowAnalytics(true);
+    setCanvasError(null);
+    setImageError(null);
+  }, []);
+
+  const navigateToHome = useCallback(() => {
+    setShowTool(false);
+    setShowAnalytics(false);
+    setShowXApiConfig(false);
+    setCanvasError(null);
+    setImageError(null);
+    setBearerTokenInput('');
+    // Reset modal states and clear any errors
+  }, []);
+
+  // Handle escape key for modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showXApiConfig) {
+        setShowXApiConfig(false);
+        setBearerTokenInput('');
+      }
+    };
+
+    if (showXApiConfig) {
+      document.addEventListener('keydown', handleEscape);
+      // Trap focus in modal
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [showXApiConfig]);
 
   // Clear errors when user changes settings
   useEffect(() => {
@@ -566,47 +731,7 @@ export default function GrowthRingsApp() {
     return "🌱 Every expert was once a beginner!";
   };
 
-  // Analytics helper functions
-  const getAnalyticsStats = () => {
-    if (analyticsData.length === 0) return { growth: 0, avgEngagement: 0, totalTweets: 0 };
-
-    const latest = analyticsData[analyticsData.length - 1];
-    const earliest = analyticsData[0];
-    const growth = ((latest.followers - earliest.followers) / earliest.followers) * 100;
-    const avgEngagement = analyticsData.reduce((sum, d) => sum + d.engagement, 0) / analyticsData.length;
-    const totalTweets = analyticsData.reduce((sum, d) => sum + d.tweets, 0);
-
-    return { growth, avgEngagement, totalTweets };
-  };
-
-  const SimpleChart = ({ data, metric, color }: { data: AnalyticsDataPoint[], metric: keyof AnalyticsDataPoint, color: string }) => {
-    if (data.length === 0) return null;
-
-    const values = data.map(d => typeof d[metric] === 'number' ? d[metric] : 0);
-    const max = Math.max(...values);
-    const min = Math.min(...values);
-    const range = max - min || 1;
-
-    return (
-      <div className="h-32 flex items-end gap-1">
-        {values.map((value, index) => {
-          const height = ((value - min) / range) * 100;
-          return (
-            <div
-              key={index}
-              className="flex-1 rounded-t"
-              style={{
-                height: `${Math.max(height, 5)}%`,
-                backgroundColor: color,
-                opacity: 0.8
-              }}
-              title={`${data[index].date}: ${value}`}
-            />
-          );
-        })}
-      </div>
-    );
-  };
+  // Note: Legacy analytics functions removed - using real X API analytics now
 
   if (showTool) {
     return (
@@ -626,17 +751,25 @@ export default function GrowthRingsApp() {
               </div>
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => {
-                    setShowTool(false);
-                    setShowAnalytics(true);
-                  }}
+                  onClick={() => setShowXApiConfig(true)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                    xApi.isConfigured
+                      ? 'bg-green-100 hover:bg-green-200 text-green-700'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  {xApi.isConfigured ? <Wifi size={16} /> : <WifiOff size={16} />}
+                  {xApi.isConfigured ? 'X Connected' : 'Connect X API'}
+                </button>
+                <button
+                  onClick={navigateToAnalytics}
                   className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                 >
                   <BarChart3 size={16} />
                   Analytics
                 </button>
                 <button
-                  onClick={() => setShowTool(false)}
+                  onClick={navigateToHome}
                   className="text-gray-600 hover:text-gray-900"
                 >
                   ← Back to Home
@@ -657,79 +790,149 @@ export default function GrowthRingsApp() {
                 </h2>
                 
                 {/* Goal Type */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Growth Metric</label>
-                  <div className="space-y-2">
+                <fieldset className="mb-4">
+                  <legend className="block text-sm font-medium text-gray-700 mb-3">Growth Metric</legend>
+                  <div className="space-y-2" role="radiogroup" aria-label="Select your growth metric">
                     {Object.entries(goalTypes).map(([key, goal]) => (
                       <button
                         key={key}
                         onClick={() => setGoalType(key)}
-                        className={`w-full p-3 rounded-lg border-2 transition-all flex items-center gap-3 ${
-                          goalType === key 
-                            ? `border-blue-500 bg-blue-50 text-blue-700` 
+                        className={`w-full p-3 rounded-lg border-2 transition-all flex items-center gap-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                          goalType === key
+                            ? `border-blue-500 bg-blue-50 text-blue-700`
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
+                        role="radio"
+                        aria-checked={goalType === key}
+                        aria-describedby={`goal-${key}-description`}
                       >
-                        <goal.icon size={18} style={{ color: goal.color }} />
+                        <goal.icon size={18} style={{ color: goal.color }} aria-hidden="true" />
                         <span className="font-medium">{goal.label}</span>
+                        <span id={`goal-${key}-description`} className="sr-only">
+                          Track your {goal.label.toLowerCase()} growth progress
+                        </span>
                       </button>
                     ))}
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Values */}
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Current</label>
-                    <input
-                      type="number"
-                      value={currentFollowers}
-                      onChange={(e) => setCurrentFollowers(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+                    <label htmlFor="current-followers" className="block text-sm font-medium text-gray-700 mb-2">
+                      Current {xApi.isConfigured && xApi.userData && (
+                        <span className="text-xs text-green-600 ml-1">(Live)</span>
+                      )}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        id="current-followers"
+                        type="number"
+                        value={currentFollowers}
+                        onChange={(e) => setCurrentFollowers(Number(e.target.value))}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        aria-describedby="current-help"
+                      />
+                      {xApi.isConfigured && (
+                        <button
+                          onClick={syncWithXApi}
+                          disabled={xApi.isLoading}
+                          className={`px-3 py-2 rounded-lg border transition-colors flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                            xApi.isLoading
+                              ? 'border-gray-300 text-gray-400 cursor-not-allowed'
+                              : 'border-blue-500 text-blue-600 hover:bg-blue-50'
+                          }`}
+                          aria-label={xApi.isLoading ? 'Syncing with X API' : 'Sync follower count with X API'}
+                          title={xApi.isLoading ? 'Syncing...' : 'Sync with X API'}
+                        >
+                          <RefreshCw size={16} className={xApi.isLoading ? 'animate-spin' : ''} aria-hidden="true" />
+                          <span className="sr-only">{xApi.isLoading ? 'Syncing with X API' : 'Sync with X API'}</span>
+                        </button>
+                      )}
+                    </div>
+                    {xApi.userData && (
+                      <p id="current-help" className="text-xs text-gray-500 mt-1">
+                        Last updated: {xApi.lastUpdated?.toLocaleTimeString()}
+                      </p>
+                    )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Target</label>
+                    <label htmlFor="target-followers" className="block text-sm font-medium text-gray-700 mb-2">Target</label>
                     <input
+                      id="target-followers"
                       type="number"
                       value={targetFollowers}
                       onChange={(e) => setTargetFollowers(Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      aria-describedby="target-help"
                     />
+                    <p id="target-help" className="sr-only">
+                      Enter your target {currentGoal.label.toLowerCase()} goal
+                    </p>
                   </div>
                 </div>
 
+                {/* X API Status */}
+                {xApi.error && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm font-medium text-red-800">X API Error</p>
+                    <p className="text-sm text-red-600 mt-1">{xApi.error}</p>
+                  </div>
+                )}
+
+                {xApi.userData && (
+                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm font-medium text-green-800 flex items-center gap-2">
+                      <Wifi size={14} />
+                      Connected to @{xApi.userData.username}
+                    </p>
+                    <p className="text-sm text-green-600 mt-1">
+                      {xApi.userData.followersCount.toLocaleString()} followers • {xApi.userData.engagementRate}% engagement
+                    </p>
+                  </div>
+                )}
+
                 {/* Timeframe */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Timeframe</label>
+                  <label htmlFor="timeframe-select" className="block text-sm font-medium text-gray-700 mb-2">Timeframe</label>
                   <select
+                    id="timeframe-select"
                     value={timeframe}
                     onChange={(e) => setTimeframe(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    aria-describedby="timeframe-help"
                   >
                     {Object.entries(timeframes).map(([key, frame]) => (
                       <option key={key} value={key}>{frame.label}</option>
                     ))}
                   </select>
+                  <p id="timeframe-help" className="sr-only">
+                    Select the duration for your goal achievement
+                  </p>
                 </div>
 
                 {/* Ring Style */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Ring Style</label>
+                  <label htmlFor="ring-style-select" className="block text-sm font-medium text-gray-700 mb-2">Ring Style</label>
                   <select
+                    id="ring-style-select"
                     value={ringStyle}
                     onChange={(e) => setRingStyle(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    aria-describedby="ring-style-help"
                   >
                     {Object.entries(ringStyles).map(([key, style]) => (
                       <option key={key} value={key}>{style.name}</option>
                     ))}
                   </select>
+                  <p id="ring-style-help" className="sr-only">
+                    Choose the visual style for your progress ring
+                  </p>
                 </div>
 
                 {/* Upload */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
+                  <label htmlFor="profile-picture-upload" className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isGenerating}
@@ -752,12 +955,17 @@ export default function GrowthRingsApp() {
                     )}
                   </button>
                   <input
+                    id="profile-picture-upload"
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
                     onChange={handleImageUpload}
                     className="hidden"
+                    aria-describedby="upload-help"
                   />
+                  <p id="upload-help" className="sr-only">
+                    Upload a profile picture to create your growth ring visualization
+                  </p>
 
                   {/* Image Upload Error Message */}
                   {imageError && (
@@ -872,12 +1080,22 @@ export default function GrowthRingsApp() {
                             ref={canvasRef}
                             className={`rounded-full shadow-lg transition-opacity ${showCanvas ? 'opacity-100' : 'opacity-0'}`}
                             style={{ maxWidth: '350px', width: '100%', height: 'auto' }}
+                            role="img"
+                            aria-label={`Growth ring showing ${Math.round(progressPercentage)}% progress towards ${targetFollowers.toLocaleString()} ${currentGoal.label.toLowerCase()}. Current: ${currentFollowers.toLocaleString()}.`}
+                            aria-describedby="progress-description"
                           />
                         </div>
 
                         <div className="bg-gray-50 rounded-lg p-4 max-w-md mx-auto">
                           <p className="text-sm font-medium text-gray-900 mb-2">{getMotivationalMessage()}</p>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="w-full bg-gray-200 rounded-full h-2"
+                            role="progressbar"
+                            aria-valuenow={Math.round(progressPercentage)}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`Progress: ${Math.round(progressPercentage)}% towards ${currentGoal.label.toLowerCase()} goal`}
+                          >
                             <div
                               className="h-2 rounded-full transition-all duration-500"
                               style={{
@@ -885,6 +1103,10 @@ export default function GrowthRingsApp() {
                                 backgroundColor: currentGoal.color
                               }}
                             />
+                          </div>
+                          <div id="progress-description" className="sr-only">
+                            Progress visualization showing {Math.round(progressPercentage)}% completion of your {currentGoal.label.toLowerCase()} goal.
+                            You have {currentFollowers.toLocaleString()} out of {targetFollowers.toLocaleString()} target {currentGoal.label.toLowerCase()}.
                           </div>
                         </div>
                       </>
@@ -895,13 +1117,96 @@ export default function GrowthRingsApp() {
             </div>
           </div>
         </div>
+
+        {/* X API Configuration Modal */}
+        {showXApiConfig && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="xapi-modal-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowXApiConfig(false);
+                setBearerTokenInput('');
+              }
+            }}
+          >
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+              <h3 id="xapi-modal-title" className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Key className="text-blue-600" size={20} aria-hidden="true" />
+                Connect X API
+              </h3>
+
+              <form onSubmit={handleXApiConfig} className="space-y-4">
+                <div>
+                  <label htmlFor="bearer-token-input" className="block text-sm font-medium text-gray-700 mb-2">
+                    X API Bearer Token
+                  </label>
+                  <input
+                    id="bearer-token-input"
+                    type="password"
+                    value={bearerTokenInput}
+                    onChange={(e) => setBearerTokenInput(e.target.value)}
+                    placeholder="Enter your X API bearer token"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                    autoFocus
+                    aria-describedby="token-help"
+                  />
+                  <p id="token-help" className="text-xs text-gray-500 mt-1">
+                    Get your bearer token from{' '}
+                    <a
+                      href="https://developer.x.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded"
+                      aria-label="X Developer Portal (opens in new tab)"
+                    >
+                      X Developer Portal
+                    </a>
+                  </p>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-800 font-medium mb-1">Free Tier Limitations:</p>
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    <li>• Only your own account data available</li>
+                    <li>• Limited to basic follower count and engagement</li>
+                    <li>• 450 requests per 15-minute window</li>
+                  </ul>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowXApiConfig(false);
+                      setBearerTokenInput('');
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Connect
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
-  // Analytics Dashboard
+  // Real Analytics Dashboard
   if (showAnalytics) {
-    const stats = getAnalyticsStats();
+    const growthStats = analytics.getGrowthStats();
+    const engagementTrends = analytics.getEngagementTrends();
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -914,23 +1219,43 @@ export default function GrowthRingsApp() {
                   <BarChart3 className="text-white" size={24} />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
-                  <p className="text-sm text-gray-600">Track your growth over time</p>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    {analytics.hasData ? `@${analytics.data.user?.username} Analytics` : 'Analytics Dashboard'}
+                  </h1>
+                  <p className="text-sm text-gray-600">
+                    {analytics.hasData ? 'Real-time X growth analytics' : 'Connect your X account to see analytics'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
+                {analytics.isConfigured && (
+                  <button
+                    onClick={analytics.refreshAnalytics}
+                    disabled={analytics.isRefreshing}
+                    className="bg-green-100 hover:bg-green-200 text-green-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                  >
+                    <RefreshCw size={16} className={analytics.isRefreshing ? 'animate-spin' : ''} />
+                    {analytics.isRefreshing ? 'Syncing...' : 'Sync Data'}
+                  </button>
+                )}
+                {!analytics.isConfigured && (
+                  <button
+                    onClick={() => setShowXApiConfig(true)}
+                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                  >
+                    <Key size={16} />
+                    Connect X API
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    setShowAnalytics(false);
-                    setShowTool(true);
-                  }}
+                  onClick={navigateToTool}
                   className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                 >
                   <Target size={16} />
                   Ring Tool
                 </button>
                 <button
-                  onClick={() => setShowAnalytics(false)}
+                  onClick={navigateToHome}
                   className="text-gray-600 hover:text-gray-900"
                 >
                   ← Back to Home
@@ -941,104 +1266,232 @@ export default function GrowthRingsApp() {
         </div>
 
         <div className="max-w-6xl mx-auto p-6">
-          {/* Stats Overview */}
-          <div className="grid md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="text-blue-600" size={20} />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">30-Day Growth</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stats.growth > 0 ? '+' : ''}{stats.growth.toFixed(1)}%
-                  </p>
-                </div>
+          {analytics.isLoading ? (
+            // Loading State
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading your analytics...</p>
               </div>
             </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Activity className="text-green-600" size={20} />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Avg Engagement</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.avgEngagement.toFixed(1)}%</p>
-                </div>
+          ) : analytics.error ? (
+            // Error State
+            <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
+              <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-red-800 mb-2">Analytics Error</h3>
+              <p className="text-red-600 mb-4">{analytics.error}</p>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={analytics.refreshAnalytics}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => setShowXApiConfig(true)}
+                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Check API Settings
+                </button>
               </div>
             </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <Zap className="text-purple-600" size={20} />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Total Tweets</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.totalTweets}</p>
-                </div>
-              </div>
+          ) : !analytics.hasData ? (
+            // No Data State
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-8 text-center">
+              <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">No Analytics Data</h3>
+              <p className="text-gray-600 mb-4">Connect your X account to see real-time analytics</p>
+              <button
+                onClick={() => setShowXApiConfig(true)}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 mx-auto"
+              >
+                <Key size={16} />
+                Connect X API
+              </button>
             </div>
-          </div>
-
-          {/* Charts */}
-          <div className="grid lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Users className="text-blue-600" size={20} />
-                Followers Growth
-              </h3>
-              <SimpleChart data={analyticsData} metric="followers" color="#1DA1F2" />
-              <div className="mt-4 flex justify-between text-sm text-gray-600">
-                <span>{analyticsData[0]?.followers.toLocaleString()}</span>
-                <span>{analyticsData[analyticsData.length - 1]?.followers.toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp className="text-green-600" size={20} />
-                Engagement Rate
-              </h3>
-              <SimpleChart data={analyticsData} metric="engagement" color="#17BF63" />
-              <div className="mt-4 flex justify-between text-sm text-gray-600">
-                <span>{analyticsData[0]?.engagement.toFixed(1)}%</span>
-                <span>{analyticsData[analyticsData.length - 1]?.engagement.toFixed(1)}%</span>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Zap className="text-purple-600" size={20} />
-                Daily Tweets
-              </h3>
-              <SimpleChart data={analyticsData} metric="tweets" color="#8B5CF6" />
-              <div className="mt-4 flex justify-between text-sm text-gray-600">
-                <span>{analyticsData[0]?.tweets}</span>
-                <span>{analyticsData[analyticsData.length - 1]?.tweets}</span>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Calendar className="text-orange-600" size={20} />
-                Recent Data
-              </h3>
-              <div className="space-y-3 max-h-32 overflow-y-auto">
-                {analyticsData.slice(-5).reverse().map((data, index) => (
-                  <div key={index} className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600">{new Date(data.date).toLocaleDateString()}</span>
-                    <div className="flex gap-4">
-                      <span className="text-blue-600">{data.followers.toLocaleString()}</span>
-                      <span className="text-green-600">{data.engagement.toFixed(1)}%</span>
-                      <span className="text-purple-600">{data.tweets}</span>
+          ) : (
+            // Analytics Content
+            <>
+              {/* User Profile Card */}
+              {analytics.data.user && (
+                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200 mb-6">
+                  <div className="flex items-center gap-4">
+                    {analytics.data.user.profileImageUrl && (
+                      <img
+                        src={analytics.data.user.profileImageUrl}
+                        alt={analytics.data.user.name}
+                        className="w-16 h-16 rounded-full"
+                      />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-gray-900">{analytics.data.user.name}</h2>
+                        {analytics.data.user.verified && (
+                          <CheckCircle className="w-5 h-5 text-blue-500" />
+                        )}
+                      </div>
+                      <p className="text-gray-600">@{analytics.data.user.username}</p>
+                      {analytics.data.user.description && (
+                        <p className="text-gray-700 mt-2 max-w-2xl">{analytics.data.user.description}</p>
+                      )}
+                    </div>
+                    <div className="ml-auto flex items-center gap-2 text-sm text-gray-500">
+                      <Clock size={14} />
+                      Last updated: {analytics.lastUpdated?.toLocaleTimeString()}
                     </div>
                   </div>
-                ))}
+                </div>
+              )}
+
+              {/* Key Metrics */}
+              <div className="grid md:grid-cols-4 gap-6 mb-8">
+                <MetricCard
+                  title="Followers"
+                  value={analytics.data.user?.followersCount || 0}
+                  change={growthStats.dailyGrowth}
+                  changeLabel="today"
+                  icon={Users}
+                  color="#1565C0"
+                />
+                <MetricCard
+                  title="Following"
+                  value={analytics.data.user?.followingCount || 0}
+                  icon={Users}
+                  color="#2E7D32"
+                />
+                <MetricCard
+                  title="Engagement Rate"
+                  value={`${engagementTrends.currentEngagement}%`}
+                  icon={TrendingUp}
+                  color="#6A1B9A"
+                />
+                <MetricCard
+                  title="Total Tweets"
+                  value={analytics.data.user?.tweetCount || 0}
+                  icon={Zap}
+                  color="#EA580C"
+                />
               </div>
-            </div>
-          </div>
+
+              {/* Growth Overview */}
+              <div className="grid lg:grid-cols-3 gap-6 mb-8">
+                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Growth Trend</h3>
+                  <div className="text-center">
+                    <div className={`text-3xl font-bold mb-2 ${
+                      growthStats.growthVelocity === 'accelerating' ? 'text-green-600' :
+                      growthStats.growthVelocity === 'declining' ? 'text-red-600' : 'text-blue-600'
+                    }`}>
+                      {growthStats.growthVelocity === 'accelerating' ? '📈' :
+                       growthStats.growthVelocity === 'declining' ? '📉' : '📊'}
+                    </div>
+                    <p className="text-sm text-gray-600 capitalize">{growthStats.growthVelocity}</p>
+                    <p className="text-lg font-semibold mt-2">
+                      {growthStats.weeklyGrowth > 0 ? '+' : ''}{growthStats.weeklyGrowth} this week
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Engagement Trend</h3>
+                  <div className="text-center">
+                    <div className={`text-3xl font-bold mb-2 ${
+                      engagementTrends.trend === 'improving' ? 'text-green-600' :
+                      engagementTrends.trend === 'declining' ? 'text-red-600' : 'text-blue-600'
+                    }`}>
+                      {engagementTrends.trend === 'improving' ? '⬆️' :
+                       engagementTrends.trend === 'declining' ? '⬇️' : '➡️'}
+                    </div>
+                    <p className="text-sm text-gray-600 capitalize">{engagementTrends.trend}</p>
+                    <p className="text-lg font-semibold mt-2">{engagementTrends.currentEngagement}% current</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Growth Score</h3>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-blue-600 mb-2">{analytics.data.growthTrend}</div>
+                    <p className="text-sm text-gray-600">Out of 10</p>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full"
+                        style={{ width: `${(analytics.data.growthTrend / 10) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Charts */}
+              <div className="grid lg:grid-cols-2 gap-6 mb-8">
+                <LineChart
+                  data={analytics.data.historicalData.map(d => ({
+                    date: d.date,
+                    followersCount: d.followersCount,
+                    followingCount: d.followingCount,
+                    tweetCount: d.tweetCount,
+                    engagementRate: d.engagementRate
+                  }))}
+                  metric="followersCount"
+                  color="#1565C0"
+                  title="Followers Growth"
+                />
+
+                <LineChart
+                  data={analytics.data.historicalData.map(d => ({
+                    date: d.date,
+                    followersCount: d.followersCount,
+                    followingCount: d.followingCount,
+                    tweetCount: d.tweetCount,
+                    engagementRate: d.engagementRate
+                  }))}
+                  metric="engagementRate"
+                  color="#2E7D32"
+                  title="Engagement Rate"
+                />
+              </div>
+
+              {/* Top Tweet & Recent Tweets */}
+              <div className="grid lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1">
+                  <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Performing Tweet</h3>
+                    {analytics.data.topTweet ? (
+                      <TweetCard
+                        tweet={{
+                          ...analytics.data.topTweet,
+                          createdAt: new Date().toISOString(),
+                          metrics: {
+                            retweets: 0,
+                            likes: 0,
+                            replies: 0,
+                            quotes: 0
+                          }
+                        }}
+                        isTopTweet
+                      />
+                    ) : (
+                      <p className="text-gray-500 text-center py-8">No tweet data available</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="lg:col-span-2">
+                  <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Tweets</h3>
+                    <div className="space-y-4 max-h-96 overflow-y-auto">
+                      {analytics.data.tweets.slice(0, 5).map((tweet) => (
+                        <TweetCard key={tweet.id} tweet={tweet} />
+                      ))}
+                      {analytics.data.tweets.length === 0 && (
+                        <p className="text-gray-500 text-center py-8">No recent tweets found</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -1083,14 +1536,14 @@ export default function GrowthRingsApp() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-6">
             <button
-              onClick={() => setShowTool(true)}
+              onClick={navigateToTool}
               className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-colors flex items-center gap-2 shadow-lg"
             >
               Create My Growth Ring
               <ArrowRight size={20} />
             </button>
             <button
-              onClick={() => setShowAnalytics(true)}
+              onClick={navigateToAnalytics}
               className="bg-white border-2 border-blue-500 text-blue-600 hover:bg-blue-50 px-8 py-4 rounded-xl font-semibold text-lg transition-colors flex items-center gap-2"
             >
               <BarChart3 size={20} />
@@ -1185,37 +1638,70 @@ export default function GrowthRingsApp() {
             {!emailSubmitted ? (
               <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <h3 className="text-xl font-semibold text-gray-900 mb-4">Get Early Access to Pro Features</h3>
+
+                {emailError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-600">{emailError}</p>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setEmailError(null); // Clear error when user types
+                    }}
                     placeholder="Enter your email"
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                     required
+                    disabled={emailLoading}
+                    aria-describedby="email-help"
                   />
                   <button
                     type="submit"
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2"
+                    disabled={emailLoading || !email.trim()}
+                    className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 min-w-[120px]"
                   >
-                    <Mail size={16} />
-                    Notify Me
+                    {emailLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Joining...
+                      </>
+                    ) : (
+                      <>
+                        <Mail size={16} />
+                        Notify Me
+                      </>
+                    )}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500">Auto X API sync • Advanced analytics • Priority support</p>
+                <p id="email-help" className="text-xs text-gray-500">
+                  Auto X API sync • Advanced analytics • Priority support
+                </p>
               </form>
             ) : (
               <div className="text-center">
                 <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">You&apos;re on the list!</h3>
-                <p className="text-gray-600">We&apos;ll notify you when Pro features are ready.</p>
+                <p className="text-gray-600 mb-4">We&apos;ll notify you when Pro features are ready.</p>
+                <button
+                  onClick={() => {
+                    setEmailSubmitted(false);
+                    setEmailError(null);
+                  }}
+                  className="text-sm text-blue-600 hover:text-blue-700 underline"
+                >
+                  Sign up another email
+                </button>
               </div>
             )}
           </div>
           
           <div className="mt-8">
             <button
-              onClick={() => setShowTool(true)}
+              onClick={navigateToTool}
               className="bg-white text-blue-600 hover:bg-gray-100 px-8 py-4 rounded-xl font-semibold text-lg transition-colors inline-flex items-center gap-2"
             >
               Try Free Tool Now
