@@ -2,9 +2,6 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Target, Users, TrendingUp, Zap, Download, Upload, Settings, Trophy, CheckCircle, Star, ArrowRight, Mail, BarChart3, Calendar, Activity } from 'lucide-react';
-import { XApiService } from './services/xapi';
-import { useAnalytics } from './hooks/useAnalytics';
-import { LineChart, MetricCard, TweetCard } from './components/AnalyticsCharts';
 
 interface AnalyticsDataPoint {
   date: string;
@@ -146,7 +143,7 @@ export default function GrowthRingsApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Analytics state
-  const [analyticsData, setAnalyticsData] = useState<AnalyticsDataPoint[]>(() => {
+  const [analyticsData] = useState<AnalyticsDataPoint[]>(() => {
     // Try to load from localStorage first
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('growthRingsAnalytics');
@@ -183,17 +180,17 @@ export default function GrowthRingsApp() {
     }
   }, [analyticsData]);
 
-  const goalTypes = {
+  const goalTypes = useMemo(() => ({
     followers: { icon: Users, label: 'Followers', color: '#1DA1F2', format: (val: number) => val.toLocaleString() },
     engagement: { icon: TrendingUp, label: 'Engagement Rate', color: '#17BF63', suffix: '%', format: (val: number) => val.toFixed(1) },
     tweets: { icon: Zap, label: 'Monthly Tweets', color: '#8B5CF6', format: (val: number) => val.toString() }
-  };
+  }), []);
 
-  const ringStyles = {
+  const ringStyles = useMemo(() => ({
     classic: { name: 'Classic Ring', gradient: false },
     gradient: { name: 'Gradient Glow', gradient: true },
     neon: { name: 'Neon Pulse', gradient: true, glow: true }
-  };
+  }), []);
 
   const timeframes = {
     '1month': { label: '1 Month', days: 30 },
@@ -273,7 +270,7 @@ export default function GrowthRingsApp() {
             // Draw image with error handling
             try {
               ctx.drawImage(img, 0, 0, size, size);
-            } catch (error) {
+            } catch (_error) {
               setCanvasError('Failed to draw image on canvas. The image may be corrupted.');
               setIsGenerating(false);
               return;
@@ -293,7 +290,7 @@ export default function GrowthRingsApp() {
               ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
               ctx.lineWidth = lineWidth;
               ctx.stroke();
-            } catch (error) {
+            } catch (_error) {
               setCanvasError('Failed to draw background ring.');
               setIsGenerating(false);
               return;
@@ -327,7 +324,7 @@ export default function GrowthRingsApp() {
 
               ctx.stroke();
               ctx.shadowBlur = 0;
-            } catch (error) {
+            } catch (_error) {
               setCanvasError('Failed to draw progress ring.');
               setIsGenerating(false);
               return;
@@ -408,7 +405,7 @@ export default function GrowthRingsApp() {
         // Load the image
         try {
           img.src = profileImage;
-        } catch (error) {
+        } catch (_error) {
           clearTimeout(imageTimeout);
           setCanvasError('Failed to set image source. Please try uploading the image again.');
           setIsGenerating(false);
@@ -418,7 +415,7 @@ export default function GrowthRingsApp() {
         setIsGenerating(false);
       }
     });
-  }, [profileImage, goalType, ringStyle, currentGoal, debouncedProgressPercentage, ringStyles]);
+  }, [profileImage, ringStyle, currentGoal, debouncedProgressPercentage, ringStyles]);
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     // Clear previous errors
@@ -1106,9 +1103,10 @@ export default function GrowthRingsApp() {
             <div className="grid md:grid-cols-3 gap-8 items-center">
               <div className="text-center">
                 <div className="w-32 h-32 mx-auto mb-4 relative">
-                  <img 
-                    src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDEyOCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iNjQiIGZpbGw9IiNGM0Y0RjYiLz4KPHN2ZyB4PSIzMiIgeT0iMzIiIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2QjczODAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KPHBhdGggZD0iTTIwIDIxdi0yYTQgNCAwIDAgMC00LTRIOGE0IDQgMCAwIDAtNCA0djIiLz4KPGNpcmNsZSBjeD0iMTIiIGN5PSI3IiByPSI0Ii8+Cjwvc3ZnPgo8L3N2Zz4K" 
-                    alt="Profile" 
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDEyOCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iNjQiIGZpbGw9IiNGM0Y0RjYiLz4KPHN2ZyB4PSIzMiIgeT0iMzIiIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2QjczODAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KPHBhdGggZD0iTTIwIDIxdi0yYTQgNCAwIDAgMC00LTRIOGE0IDQgMCAwIDAtNCA0djIiLz4KPGNpcmNsZSBjeD0iMTIiIGN5PSI3IiByPSI0Ii8+Cjwvc3ZnPgo8L3N2Zz4K"
+                    alt="Profile"
                     className="w-full h-full rounded-full"
                   />
                   <div className="absolute inset-0 rounded-full border-4 border-blue-500" style={{
@@ -1126,9 +1124,10 @@ export default function GrowthRingsApp() {
 
               <div className="text-center">
                 <div className="w-32 h-32 mx-auto mb-4 relative">
-                  <img 
-                    src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDEyOCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iNjQiIGZpbGw9IiNGM0Y0RjYiLz4KPHN2ZyB4PSIzMiIgeT0iMzIiIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2QjczODAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KPHBhdGggZD0iTTIwIDIxdi0yYTQgNCAwIDAgMC00LTRIOGE0IDQgMCAwIDAtNCA0djIiLz4KPGNpcmNsZSBjeD0iMTIiIGN5PSI3IiByPSI0Ii8+Cjwvc3ZnPgo8L3N2Zz4K" 
-                    alt="Profile" 
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDEyOCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iNjQiIGZpbGw9IiNGM0Y0RjYiLz4KPHN2ZyB4PSIzMiIgeT0iMzIiIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2QjczODAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KPHBhdGggZD0iTTIwIDIxdi0yYTQgNCAwIDAgMC00LTRIOGE0IDQgMCAwIDAtNCA0djIiLz4KPGNpcmNsZSBjeD0iMTIiIGN5PSI3IiByPSI0Ii8+Cjwvc3ZnPgo8L3N2Zz4K"
+                    alt="Profile"
                     className="w-full h-full rounded-full"
                   />
                   <div className="absolute inset-0 rounded-full border-4 border-green-500" style={{

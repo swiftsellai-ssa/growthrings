@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAccessTokenCookie, clearAuthCookies } from '@/app/lib/cookies';
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     // Get the access token from httpOnly cookie
     const accessToken = await getAccessTokenCookie();

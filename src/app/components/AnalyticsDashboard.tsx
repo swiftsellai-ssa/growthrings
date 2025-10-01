@@ -138,6 +138,7 @@ export const AnalyticsDashboard: React.FC = () => {
               <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200 mb-6">
                 <div className="flex items-center gap-4">
                   {analytics.data.user.profileImageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={analytics.data.user.profileImageUrl}
                       alt={analytics.data.user.name}

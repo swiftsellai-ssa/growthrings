@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { clearAuthCookies, clearOAuthCookies } from '../../../lib/cookies';
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     // Clear all authentication-related cookies
     await clearAuthCookies();

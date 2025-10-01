@@ -12,7 +12,7 @@ import {
   isAccessTokenExpired,
 } from '../../../lib/cookies';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     // Check if user has an access token
     const accessToken = await getAccessTokenCookie();

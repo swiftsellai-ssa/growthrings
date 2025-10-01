@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildAuthorizationUrl } from '../../../lib/oauth';
 import { setOAuthCookies } from '../../../lib/cookies';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     // Get OAuth configuration
     const clientId = process.env.X_CLIENT_ID || process.env.NEXT_PUBLIC_X_CLIENT_ID;

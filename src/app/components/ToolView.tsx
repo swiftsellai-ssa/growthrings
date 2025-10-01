@@ -30,17 +30,17 @@ export const ToolView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const goalTypes = {
+  const goalTypes = React.useMemo(() => ({
     followers: { icon: Users, label: 'Followers', color: '#1565C0', format: (val: number) => val.toLocaleString() },
     engagement: { icon: TrendingUp, label: 'Engagement Rate', color: '#2E7D32', suffix: '%', format: (val: number) => val.toFixed(1) },
     tweets: { icon: Zap, label: 'Monthly Tweets', color: '#6A1B9A', format: (val: number) => val.toString() }
-  };
+  }), []);
 
-  const ringStyles = {
+  const ringStyles = React.useMemo(() => ({
     classic: { name: 'Classic Ring', gradient: false },
     gradient: { name: 'Gradient Glow', gradient: true },
     neon: { name: 'Neon Pulse', gradient: true, glow: true }
-  };
+  }), []);
 
   const timeframes = {
     '1month': { label: '1 Month', days: 30 },

@@ -15,7 +15,7 @@ import {
 } from '@/app/lib/cookies';
 import { refreshAccessToken } from '@/app/lib/oauth';
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     // Get the refresh token from httpOnly cookie
     const refreshToken = await getRefreshTokenCookie();

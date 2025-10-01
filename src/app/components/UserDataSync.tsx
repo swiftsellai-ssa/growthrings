@@ -103,7 +103,7 @@ export const UserDataSync: React.FC<UserDataSyncProps> = ({
  */
 export const ToolViewWithSync: React.FC = () => {
   const [currentFollowers, setCurrentFollowers] = React.useState(2500);
-  const [targetFollowers, setTargetFollowers] = React.useState(10000);
+  const [_targetFollowers, _setTargetFollowers] = React.useState(10000);
 
   const handleDataUpdate = (data: {
     followersCount: number;
@@ -136,11 +136,11 @@ export const ToolViewWithSync: React.FC = () => {
       {/* Your existing ToolView components */}
       <div className="p-4">
         <h2>Current Followers: {currentFollowers.toLocaleString()}</h2>
-        <h2>Target: {targetFollowers.toLocaleString()}</h2>
+        <h2>Target: {_targetFollowers.toLocaleString()}</h2>
         <div className="h-2 bg-gray-200 rounded">
           <div
             className="h-2 bg-blue-500 rounded"
-            style={{ width: `${(currentFollowers / targetFollowers) * 100}%` }}
+            style={{ width: `${(currentFollowers / _targetFollowers) * 100}%` }}
           />
         </div>
       </div>
